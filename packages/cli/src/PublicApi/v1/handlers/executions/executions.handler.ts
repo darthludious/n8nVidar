@@ -8,7 +8,7 @@ import { getSharedWorkflowIds } from '../workflows/workflows.service';
 import { encodeNextCursor } from '../../shared/services/pagination.service';
 import { Container } from 'typedi';
 import { InternalHooks } from '@/InternalHooks';
-import { ExecutionRepository } from '@/databases/repositories';
+import { ExecutionRepository } from '@db/repositories/execution.repository';
 
 export = {
 	deleteExecution: [
@@ -31,7 +31,10 @@ export = {
 				return res.status(404).json({ message: 'Not Found' });
 			}
 
-			await Container.get(ExecutionRepository).softDelete(execution.id);
+			await Container.get(ExecutionRepository).hardDelete({
+				workflowId: execution.workflowId as string,
+				executionId: execution.id,
+			});
 
 			execution.id = id;
 

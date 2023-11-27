@@ -7,7 +7,6 @@ import type {
 	REGULAR_NODE_CREATOR_VIEW,
 	AI_OTHERS_NODE_CREATOR_VIEW,
 } from './constants';
-
 import type { IMenuItem } from 'n8n-design-system';
 import type {
 	GenericValue,
@@ -45,10 +44,13 @@ import type {
 	BannerName,
 	INodeExecutionData,
 	INodeProperties,
+	NodeConnectionType,
 } from 'n8n-workflow';
 import type { BulkCommand, Undoable } from '@/models/history';
 import type { PartialBy, TupleToUnion } from '@/utils/typeHelpers';
 import type { Component } from 'vue';
+import type { Scope } from '@n8n/permissions';
+import type { runExternalHook } from '@/utils';
 
 export * from 'n8n-design-system/types';
 
@@ -91,13 +93,17 @@ declare global {
 			debug?(): void;
 		};
 		analytics?: {
-			track(event: string, proeprties?: ITelemetryTrackProperties): void;
+			identify(userId: string): void;
+			track(event: string, properties?: ITelemetryTrackProperties): void;
+			page(category: string, name: string, properties?: ITelemetryTrackProperties): void;
 		};
 		featureFlags?: {
 			getAll: () => FeatureFlags;
 			getVariant: (name: string) => string | boolean | undefined;
 			override: (name: string, value: string) => void;
 		};
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		Cypress: unknown;
 	}
 }
 
@@ -155,7 +161,7 @@ export interface INodeTypesMaxCount {
 }
 
 export interface IExternalHooks {
-	run(eventName: string, metadata?: IDataObject): Promise<void>;
+	run: typeof runExternalHook;
 }
 
 export interface INodeTranslationHeaders {
@@ -406,6 +412,16 @@ export interface IExecutionDeleteFilter {
 	ids?: string[];
 }
 
+export type PushDataUsersForWorkflow = {
+	workflowId: string;
+	activeUsers: Array<{ user: IUser; lastSeen: string }>;
+};
+
+type PushDataWorkflowUsersChanged = {
+	data: PushDataUsersForWorkflow;
+	type: 'activeWorkflowUsersChanged';
+};
+
 export type IPushData =
 	| PushDataExecutionFinished
 	| PushDataExecutionStarted
@@ -415,7 +431,27 @@ export type IPushData =
 	| PushDataReloadNodeType
 	| PushDataRemoveNodeType
 	| PushDataTestWebhook
-	| PushDataExecutionRecovered;
+	| PushDataExecutionRecovered
+	| PushDataWorkerStatusMessage
+	| PushDataActiveWorkflowAdded
+	| PushDataActiveWorkflowRemoved
+	| PushDataWorkflowFailedToActivate
+	| PushDataWorkflowUsersChanged;
+
+type PushDataActiveWorkflowAdded = {
+	data: IActiveWorkflowAdded;
+	type: 'workflowActivated';
+};
+
+type PushDataActiveWorkflowRemoved = {
+	data: IActiveWorkflowRemoved;
+	type: 'workflowDeactivated';
+};
+
+type PushDataWorkflowFailedToActivate = {
+	data: IWorkflowFailedToActivate;
+	type: 'workflowFailedToActivate';
+};
 
 type PushDataExecutionRecovered = {
 	data: IPushDataExecutionRecovered;
@@ -462,6 +498,11 @@ type PushDataTestWebhook = {
 	type: 'testWebhookDeleted' | 'testWebhookReceived';
 };
 
+type PushDataWorkerStatusMessage = {
+	data: IPushDataWorkerStatusMessage;
+	type: 'sendWorkerStatusMessage';
+};
+
 export interface IPushDataExecutionStarted {
 	executionId: string;
 	mode: WorkflowExecuteMode;
@@ -478,6 +519,19 @@ export interface IPushDataExecutionFinished {
 	data: IRun;
 	executionId: string;
 	retryOf?: string;
+}
+
+export interface IActiveWorkflowAdded {
+	workflowId: string;
+}
+
+export interface IActiveWorkflowRemoved {
+	workflowId: string;
+}
+
+export interface IWorkflowFailedToActivate {
+	workflowId: string;
+	errorMessage: string;
 }
 
 export interface IPushDataUnsavedExecutionFinished {
@@ -517,6 +571,41 @@ export interface IPushDataTestWebhook {
 export interface IPushDataConsoleMessage {
 	source: string;
 	messages: string[];
+}
+
+export interface WorkerJobStatusSummary {
+	jobId: string;
+	executionId: string;
+	retryOf?: string;
+	startedAt: Date;
+	mode: WorkflowExecuteMode;
+	workflowName: string;
+	workflowId: string;
+	status: ExecutionStatus;
+}
+
+export interface IPushDataWorkerStatusPayload {
+	workerId: string;
+	runningJobsSummary: WorkerJobStatusSummary[];
+	freeMem: number;
+	totalMem: number;
+	uptime: number;
+	loadAvg: number[];
+	cpus: string;
+	arch: string;
+	platform: NodeJS.Platform;
+	hostname: string;
+	interfaces: Array<{
+		family: 'IPv4' | 'IPv6';
+		address: string;
+		internal: boolean;
+	}>;
+	version: string;
+}
+
+export interface IPushDataWorkerStatusMessage {
+	workerId: string;
+	status: IPushDataWorkerStatusPayload;
 }
 
 export type IPersonalizationSurveyAnswersV1 = {
@@ -594,6 +683,7 @@ export interface IUserResponse {
 		id: string;
 		createdAt: Date;
 	};
+	globalScopes?: Scope[];
 	personalizationAnswers?: IPersonalizationSurveyVersions | null;
 	isPending: boolean;
 	signInType?: SignInType;
@@ -613,6 +703,7 @@ export interface IUser extends IUserResponse {
 	fullName?: string;
 	createdAt?: string;
 	mfaEnabled: boolean;
+	globalRoleId?: number;
 }
 
 export interface IVersionNotificationSettings {
@@ -765,6 +856,7 @@ export type SimplifiedNodeType = Pick<
 	| 'group'
 	| 'icon'
 	| 'iconUrl'
+	| 'badgeIconUrl'
 	| 'codex'
 	| 'defaults'
 	| 'outputs'
@@ -1121,6 +1213,7 @@ export interface UIState {
 	executionSidebarAutoRefresh: boolean;
 	bannersHeight: number;
 	bannerStack: BannerName[];
+	theme: ThemeOption;
 }
 
 export type IFakeDoor = {
@@ -1149,6 +1242,7 @@ export type NodeFilterType =
 
 export type NodeCreatorOpenSource =
 	| ''
+	| 'context_menu'
 	| 'no_trigger_execution_tooltip'
 	| 'plus_endpoint'
 	| 'add_input_endpoint'
@@ -1167,6 +1261,7 @@ export interface INodeCreatorState {
 }
 
 export interface ISettingsState {
+	initialized: boolean;
 	settings: IN8nUISettings;
 	promptsData: IN8nPrompts;
 	userManagement: IUserManagementSettings;
@@ -1231,6 +1326,7 @@ export interface IVersionsState {
 }
 
 export interface IUsersState {
+	initialized: boolean;
 	currentUserId: null | string;
 	users: { [userId: string]: IUser };
 	currentUserCloudInfo: Cloud.UserAccount | null;
@@ -1303,17 +1399,6 @@ export interface ITabBarItem {
 	value: string;
 	label: string;
 	disabled?: boolean;
-}
-
-export interface IResourceLocatorReqParams {
-	nodeTypeAndVersion: INodeTypeNameVersion;
-	path: string;
-	methodName?: string;
-	searchList?: ILoadOptions;
-	currentNodeParameters: INodeParameters;
-	credentials?: INodeCredentials;
-	filter?: string;
-	paginationToken?: unknown;
 }
 
 export interface IResourceLocatorResultExpanded extends INodeListSearchItems {
@@ -1423,13 +1508,30 @@ export type NodeAuthenticationOption = {
 	displayOptions?: IDisplayOptions;
 };
 
-export interface ResourceMapperReqParams {
-	nodeTypeAndVersion: INodeTypeNameVersion;
-	path: string;
-	methodName?: string;
-	currentNodeParameters: INodeParameters;
-	credentials?: INodeCredentials;
+export declare namespace DynamicNodeParameters {
+	interface BaseRequest {
+		path: string;
+		nodeTypeAndVersion: INodeTypeNameVersion;
+		currentNodeParameters: INodeParameters;
+		methodName?: string;
+		credentials?: INodeCredentials;
+	}
+
+	interface OptionsRequest extends BaseRequest {
+		loadOptions?: ILoadOptions;
+	}
+
+	interface ResourceLocatorResultsRequest extends BaseRequest {
+		methodName: string;
+		filter?: string;
+		paginationToken?: string;
+	}
+
+	interface ResourceMapperFieldsRequest extends BaseRequest {
+		methodName: string;
+	}
 }
+
 export interface EnvironmentVariable {
 	id: number;
 	key: string;
@@ -1582,6 +1684,7 @@ export declare namespace Cloud {
 }
 
 export interface CloudPlanState {
+	initialized: boolean;
 	data: Cloud.PlanData | null;
 	usage: InstanceUsage | null;
 	loadingPlan: boolean;
@@ -1677,3 +1780,6 @@ export type ToggleNodeCreatorOptions = {
 	source?: NodeCreatorOpenSource;
 	nodeCreatorView?: string;
 };
+
+export type AppliedThemeOption = 'light' | 'dark';
+export type ThemeOption = AppliedThemeOption | 'system';

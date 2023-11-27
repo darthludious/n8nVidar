@@ -117,9 +117,9 @@ export class Code implements INodeType {
 				workflowMode === 'manual'
 					? this.sendMessageToUI
 					: CODE_ENABLE_STDOUT === 'true'
-					? (...args) =>
-							console.log(`[Workflow "${this.getWorkflow().id}"][Node "${node.name}"]`, ...args)
-					: () => {},
+					  ? (...args) =>
+								console.log(`[Workflow "${this.getWorkflow().id}"][Node "${node.name}"]`, ...args)
+					  : () => {},
 			);
 			return sandbox;
 		};
@@ -160,7 +160,12 @@ export class Code implements INodeType {
 				result = await sandbox.runCodeEachItem();
 			} catch (error) {
 				if (!this.continueOnFail()) throw error;
-				returnData.push({ json: { error: error.message } });
+				returnData.push({
+					json: { error: error.message },
+					pairedItem: {
+						item: index,
+					},
+				});
 			}
 
 			if (result) {

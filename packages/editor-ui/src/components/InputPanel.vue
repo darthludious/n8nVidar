@@ -13,12 +13,15 @@
 		:mappingEnabled="isMappingEnabled"
 		:distanceFromActive="currentNodeDepth"
 		:isProductionExecutionPreview="isProductionExecutionPreview"
+		:isPaneActive="isPaneActive"
+		@activatePane="activatePane"
 		paneType="input"
 		@itemHover="$emit('itemHover', $event)"
 		@linkRun="onLinkRun"
 		@unlinkRun="onUnlinkRun"
 		@runChange="onRunIndexChange"
 		@tableMounted="$emit('tableMounted', $event)"
+		@search="$emit('search', $event)"
 		data-test-id="ndv-input-panel"
 	>
 		<template #header>
@@ -28,7 +31,7 @@
 					teleported
 					size="small"
 					:modelValue="currentNodeName"
-					@update:modelValue="onSelect"
+					@update:modelValue="onInputNodeChange"
 					:no-data-text="$locale.baseText('ndv.input.noNodesFound')"
 					:placeholder="$locale.baseText('ndv.input.parentNodes')"
 					filterable
@@ -190,6 +193,7 @@ export default defineComponent({
 		},
 		runIndex: {
 			type: Number,
+			required: true,
 		},
 		linkedRuns: {
 			type: Boolean,
@@ -205,6 +209,10 @@ export default defineComponent({
 			type: Boolean,
 		},
 		isProductionExecutionPreview: {
+			type: Boolean,
+			default: false,
+		},
+		isPaneActive: {
 			type: Boolean,
 			default: false,
 		},
@@ -432,9 +440,9 @@ export default defineComponent({
 		onUnlinkRun() {
 			this.$emit('unlinkRun');
 		},
-		onSelect(value: string) {
+		onInputNodeChange(value: string) {
 			const index = this.parentNodes.findIndex((node) => node.name === value) + 1;
-			this.$emit('select', value, index);
+			this.$emit('changeInputNode', value, index);
 		},
 		onConnectionHelpClick() {
 			if (this.activeNode) {
@@ -453,6 +461,9 @@ export default defineComponent({
 				return `${truncated}...`;
 			}
 			return truncated;
+		},
+		activatePane() {
+			this.$emit('activatePane');
 		},
 	},
 	watch: {

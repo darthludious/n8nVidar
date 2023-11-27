@@ -23,15 +23,15 @@ export function getSourceItems(data: IExecutionResponse, target: TargetItem): Ta
 	}
 
 	const item = taskData?.data?.main?.[target.outputIndex]?.[target.itemIndex];
-	if (!item || item.pairedItem === undefined) {
+	if (item?.pairedItem === undefined) {
 		return [];
 	}
 
 	const pairedItem: IPairedItemData[] = Array.isArray(item.pairedItem)
 		? item.pairedItem
 		: typeof item.pairedItem === 'object'
-		? [item.pairedItem]
-		: [{ item: item.pairedItem }];
+		  ? [item.pairedItem]
+		  : [{ item: item.pairedItem }];
 	const sourceItems = pairedItem.map((item) => {
 		const input = item.input || 0;
 		return {

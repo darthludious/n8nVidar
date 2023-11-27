@@ -65,14 +65,17 @@
 						:sessionId="sessionId"
 						:readOnly="readOnly || hasForeignCredential"
 						:isProductionExecutionPreview="isProductionExecutionPreview"
+						:isPaneActive="isInputPaneActive"
+						@activatePane="activateInputPane"
 						@linkRun="onLinkRunToInput"
 						@unlinkRun="() => onUnlinkRun('input')"
 						@runChange="onRunInputIndexChange"
 						@openSettings="openSettings"
-						@select="onInputSelect"
+						@changeInputNode="onInputNodeChange"
 						@execute="onNodeExecute"
 						@tableMounted="onInputTableMounted"
 						@itemHover="onInputItemHover"
+						@search="onSearch"
 					/>
 				</template>
 				<template #output>
@@ -85,12 +88,15 @@
 						:isReadOnly="readOnly || hasForeignCredential"
 						:blockUI="blockUi && isTriggerNode && !isExecutableTriggerNode"
 						:isProductionExecutionPreview="isProductionExecutionPreview"
+						:isPaneActive="isOutputPaneActive"
+						@activatePane="activateOutputPane"
 						@linkRun="onLinkRunToOutput"
 						@unlinkRun="() => onUnlinkRun('output')"
 						@runChange="onRunOutputIndexChange"
 						@openSettings="openSettings"
 						@tableMounted="onOutputTableMounted"
 						@itemHover="onOutputItemHover"
+						@search="onSearch"
 					/>
 				</template>
 				<template #main>
@@ -106,6 +112,7 @@
 						@valueChanged="valueChanged"
 						@execute="onNodeExecute"
 						@stopExecution="onStopExecution"
+						@redrawRequired="redrawRequired = true"
 						@activate="onWorkflowActivate"
 					/>
 					<a
@@ -163,7 +170,7 @@ import { useNDVStore } from '@/stores/ndv.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
 import { useUIStore } from '@/stores/ui.store';
 import { useSettingsStore } from '@/stores/settings.store';
-import useDeviceSupport from '@/composables/useDeviceSupport';
+import { useDeviceSupport } from 'n8n-design-system';
 import { useMessage } from '@/composables';
 
 export default defineComponent({
@@ -199,6 +206,7 @@ export default defineComponent({
 	data() {
 		return {
 			settingsEventBus: createEventBus(),
+			redrawRequired: false,
 			runInputIndex: -1,
 			runOutputIndex: -1,
 			isLinkingEnabled: true,
@@ -209,6 +217,9 @@ export default defineComponent({
 			pinDataDiscoveryTooltipVisible: false,
 			avgInputRowHeight: 0,
 			avgOutputRowHeight: 0,
+			isInputPaneActive: false,
+			isOutputPaneActive: false,
+			isPairedItemHoveringEnabled: true,
 		};
 	},
 	mounted() {
@@ -274,6 +285,21 @@ export default defineComponent({
 			return [];
 		},
 		parentNode(): string | undefined {
+			const pinData = this.workflowsStore.getPinData;
+
+			// Return the first parent node that contains data
+			for (const parentNodeName of this.parentNodes) {
+				// Check first for pinned data
+				if (pinData[parentNodeName]) {
+					return parentNodeName;
+				}
+
+				// Check then the data of the current execution
+				if (this.workflowRunData?.[parentNodeName]) {
+					return parentNodeName;
+				}
+			}
+
 			return this.parentNodes[0];
 		},
 		isExecutableTriggerNode(): boolean {
@@ -329,7 +355,7 @@ export default defineComponent({
 			return Math.min(this.runOutputIndex, this.maxOutputRun);
 		},
 		maxInputRun(): number {
-			if (this.inputNode === null && this.activeNode === null) {
+			if (this.inputNode === null || this.activeNode === null) {
 				return 0;
 			}
 
@@ -340,7 +366,7 @@ export default defineComponent({
 
 			const runData: IRunData | null = this.workflowRunData;
 
-			if (outputs.filter((output) => output !== NodeConnectionType.Main).length) {
+			if (outputs.some((output) => output !== NodeConnectionType.Main)) {
 				node = this.activeNode;
 			}
 
@@ -499,10 +525,7 @@ export default defineComponent({
 			}
 		},
 		onInputItemHover(e: { itemIndex: number; outputIndex: number } | null) {
-			if (!this.inputNodeName) {
-				return;
-			}
-			if (e === null) {
+			if (e === null || !this.inputNodeName || !this.isPairedItemHoveringEnabled) {
 				this.ndvStore.setHoveringItem(null);
 				return;
 			}
@@ -516,7 +539,7 @@ export default defineComponent({
 			this.ndvStore.setHoveringItem(item);
 		},
 		onOutputItemHover(e: { itemIndex: number; outputIndex: number } | null) {
-			if (e === null || !this.activeNode) {
+			if (e === null || !this.activeNode || !this.isPairedItemHoveringEnabled) {
 				this.ndvStore.setHoveringItem(null);
 				return;
 			}
@@ -617,8 +640,9 @@ export default defineComponent({
 			}
 
 			if (
-				typeof this.activeNodeType.outputs === 'string' ||
-				typeof this.activeNodeType.inputs === 'string'
+				typeof this.activeNodeType?.outputs === 'string' ||
+				typeof this.activeNodeType?.inputs === 'string' ||
+				this.redrawRequired
 			) {
 				// TODO: We should keep track of if it actually changed and only do if required
 				// Whenever a node with custom inputs and outputs gets closed redraw it in case
@@ -642,24 +666,12 @@ export default defineComponent({
 				if (shouldPinDataBeforeClosing === MODAL_CONFIRM) {
 					const { value } = this.outputPanelEditMode;
 
-					if (!this.isValidPinDataSize(value)) {
-						dataPinningEventBus.emit('data-pinning-error', {
-							errorType: 'data-too-large',
-							source: 'on-ndv-close-modal',
-						});
-						return;
-					}
-
-					if (!this.isValidPinDataJSON(value)) {
-						dataPinningEventBus.emit('data-pinning-error', {
-							errorType: 'invalid-json',
-							source: 'on-ndv-close-modal',
-						});
-						return;
-					}
-
 					if (this.activeNode) {
-						this.workflowsStore.pinData({ node: this.activeNode, data: jsonParse(value) });
+						try {
+							this.setPinData(this.activeNode, jsonParse(value), 'on-ndv-close-modal');
+						} catch (error) {
+							console.error(error);
+						}
 					}
 				}
 
@@ -695,7 +707,7 @@ export default defineComponent({
 				pane,
 			});
 		},
-		onInputSelect(value: string, index: number) {
+		onInputNodeChange(value: string, index: number) {
 			this.runInputIndex = -1;
 			this.isLinkingEnabled = true;
 			this.selectedInput = value;
@@ -710,6 +722,17 @@ export default defineComponent({
 		},
 		onStopExecution() {
 			this.$emit('stopExecution');
+		},
+		activateInputPane() {
+			this.isInputPaneActive = true;
+			this.isOutputPaneActive = false;
+		},
+		activateOutputPane() {
+			this.isInputPaneActive = false;
+			this.isOutputPaneActive = true;
+		},
+		onSearch(search: string) {
+			this.isPairedItemHoveringEnabled = !search;
 		},
 	},
 });
@@ -765,6 +788,10 @@ $main-panel-width: 360px;
 	top: var(--spacing-xs);
 	left: var(--spacing-l);
 
+	span {
+		color: var(--color-ndv-back-font);
+	}
+
 	&:hover {
 		cursor: pointer;
 	}
@@ -785,7 +812,7 @@ $main-panel-width: 360px;
 	position: absolute;
 	bottom: var(--spacing-4xs);
 	left: calc(100% + var(--spacing-s));
-	color: var(--color-text-xlight);
+	color: var(--color-feature-request-font);
 	font-size: var(--font-size-2xs);
 	white-space: nowrap;
 

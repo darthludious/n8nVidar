@@ -3,7 +3,9 @@ import { Service } from 'typedi';
 import { v4 as uuid } from 'uuid';
 import config from '@/config';
 import type { Role } from '@db/entities/Role';
-import { RoleRepository, SettingsRepository, UserRepository } from '@db/repositories';
+import { RoleRepository } from '@db/repositories/role.repository';
+import { SettingsRepository } from '@db/repositories/settings.repository';
+import { UserRepository } from '@db/repositories/user.repository';
 import { ActiveWorkflowRunner } from '@/ActiveWorkflowRunner';
 import { hashPassword } from '@/UserManagement/UserManagementHelper';
 import { eventBus } from '@/eventbus/MessageEventBus/MessageEventBus';
@@ -12,9 +14,7 @@ import { LICENSE_FEATURES, inE2ETests } from '@/constants';
 import { NoAuthRequired, Patch, Post, RestController } from '@/decorators';
 import type { UserSetupPayload } from '@/requests';
 import type { BooleanLicenseFeature } from '@/Interfaces';
-import { UserSettings } from 'n8n-core';
 import { MfaService } from '@/Mfa/mfa.service';
-import { TOTPService } from '@/Mfa/totp.service';
 
 if (!inE2ETests) {
 	console.error('E2E endpoints only allowed during E2E tests');
@@ -69,6 +69,8 @@ export class E2EController {
 		[LICENSE_FEATURES.WORKFLOW_HISTORY]: false,
 		[LICENSE_FEATURES.DEBUG_IN_EDITOR]: false,
 		[LICENSE_FEATURES.BINARY_DATA_S3]: false,
+		[LICENSE_FEATURES.MULTIPLE_MAIN_INSTANCES]: false,
+		[LICENSE_FEATURES.WORKER_VIEW]: false,
 	};
 
 	constructor(
@@ -77,6 +79,7 @@ export class E2EController {
 		private settingsRepo: SettingsRepository,
 		private userRepo: UserRepository,
 		private workflowRunner: ActiveWorkflowRunner,
+		private mfaService: MfaService,
 	) {
 		license.isFeatureEnabled = (feature: BooleanLicenseFeature) =>
 			this.enabledFeatures[feature] ?? false;
@@ -95,6 +98,13 @@ export class E2EController {
 	setFeature(req: Request<{}, {}, { feature: BooleanLicenseFeature; enabled: boolean }>) {
 		const { enabled, feature } = req.body;
 		this.enabledFeatures[feature] = enabled;
+	}
+
+	@Patch('/queue-mode')
+	async setQueueMode(req: Request<{}, {}, { enabled: boolean }>) {
+		const { enabled } = req.body;
+		config.set('executions.mode', enabled ? 'queue' : 'regular');
+		return { success: true, message: `Queue mode set to ${config.getEnv('executions.mode')}` };
 	}
 
 	private resetFeatures() {
@@ -141,10 +151,6 @@ export class E2EController {
 			roles.map(([name, scope], index) => ({ name, scope, id: (index + 1).toString() })),
 		);
 
-		const encryptionKey = await UserSettings.getEncryptionKey();
-
-		const mfaService = new MfaService(this.userRepo, new TOTPService(), encryptionKey);
-
 		const instanceOwner = {
 			id: uuid(),
 			...owner,
@@ -153,10 +159,8 @@ export class E2EController {
 		};
 
 		if (owner?.mfaSecret && owner.mfaRecoveryCodes?.length) {
-			const { encryptedRecoveryCodes, encryptedSecret } = mfaService.encryptSecretAndRecoveryCodes(
-				owner.mfaSecret,
-				owner.mfaRecoveryCodes,
-			);
+			const { encryptedRecoveryCodes, encryptedSecret } =
+				this.mfaService.encryptSecretAndRecoveryCodes(owner.mfaSecret, owner.mfaRecoveryCodes);
 			instanceOwner.mfaSecret = encryptedSecret;
 			instanceOwner.mfaRecoveryCodes = encryptedRecoveryCodes;
 		}

@@ -1,7 +1,8 @@
-import { RoleRepository, SharedWorkflowRepository } from '@/databases/repositories';
 import { Service } from 'typedi';
+import { RoleRepository } from '@db/repositories/role.repository';
+import { SharedWorkflowRepository } from '@db/repositories/sharedWorkflow.repository';
 import { CacheService } from './cache.service';
-import type { RoleNames, RoleScopes } from '@/databases/entities/Role';
+import type { RoleNames, RoleScopes } from '@db/entities/Role';
 
 class InvalidRoleError extends Error {}
 
@@ -23,7 +24,7 @@ export class RoleService {
 		void this.cacheService.setMany(allRoles.map((r) => [r.cacheKey, r]));
 	}
 
-	private async findCached(scope: RoleScopes, name: RoleNames) {
+	async findCached(scope: RoleScopes, name: RoleNames) {
 		const cacheKey = `role:${scope}:${name}`;
 
 		const cachedRole = await this.cacheService.get(cacheKey);
@@ -49,6 +50,7 @@ export class RoleService {
 	private roles: Array<{ name: RoleNames; scope: RoleScopes }> = [
 		{ scope: 'global', name: 'owner' },
 		{ scope: 'global', name: 'member' },
+		{ scope: 'global', name: 'admin' },
 		{ scope: 'workflow', name: 'owner' },
 		{ scope: 'credential', name: 'owner' },
 		{ scope: 'credential', name: 'user' },
@@ -65,6 +67,10 @@ export class RoleService {
 
 	async findGlobalMemberRole() {
 		return this.findCached('global', 'member');
+	}
+
+	async findGlobalAdminRole() {
+		return this.findCached('global', 'admin');
 	}
 
 	async findWorkflowOwnerRole() {

@@ -34,7 +34,6 @@ import type { INodeUi } from '@/Interface';
 import type { INodeTypeDescription } from 'n8n-workflow';
 import { workflowRun } from '@/mixins/workflowRun';
 import { pinData } from '@/mixins/pinData';
-import { dataPinningEventBus } from '@/event-bus';
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNDVStore } from '@/stores/ndv.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
@@ -98,6 +97,9 @@ export default defineComponent({
 			return this.uiStore.isActionActive('workflowRunning');
 		},
 		isTriggerNode(): boolean {
+			if (!this.node) {
+				return false;
+			}
 			return this.nodeTypesStore.isTriggerNode(this.node.type);
 		},
 		isManualTriggerNode(): boolean {
@@ -225,9 +227,8 @@ export default defineComponent({
 					);
 					shouldUnpinAndExecute = confirmResult === MODAL_CONFIRM;
 
-					if (shouldUnpinAndExecute) {
-						dataPinningEventBus.emit('data-unpinning', { source: 'unpin-and-execute-modal' });
-						this.workflowsStore.unpinData({ node: this.node });
+					if (shouldUnpinAndExecute && this.node) {
+						this.unsetPinData(this.node, 'unpin-and-execute-modal');
 					}
 				}
 

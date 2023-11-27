@@ -10,9 +10,12 @@
 
 import get from 'lodash/get';
 import isEqual from 'lodash/isEqual';
+import uniqBy from 'lodash/uniqBy';
 
 import type {
+	FieldType,
 	IContextObject,
+	IHttpRequestMethods,
 	INode,
 	INodeCredentialDescription,
 	INodeIssueObjectProperty,
@@ -23,17 +26,15 @@ import type {
 	INodePropertyCollection,
 	INodePropertyMode,
 	INodePropertyModeValidation,
+	INodePropertyOptions,
 	INodePropertyRegexValidation,
 	INodeType,
-	IVersionedNodeType,
 	IParameterDependencies,
 	IRunExecutionData,
+	IVersionedNodeType,
 	IWebhookData,
 	IWorkflowExecuteAdditionalData,
 	NodeParameterValue,
-	IHttpRequestMethods,
-	FieldType,
-	INodePropertyOptions,
 	ResourceMapperValue,
 	ValidationResult,
 	ConnectionTypes,
@@ -45,8 +46,8 @@ import type {
 import { isResourceMapperValue, isValidResourceLocatorParameterValue } from './type-guards';
 import { deepCopy } from './utils';
 
-import type { Workflow } from './Workflow';
 import { DateTime } from 'luxon';
+import type { Workflow } from './Workflow';
 
 export const cronNodeOptions: INodePropertyCollection[] = [
 	{
@@ -235,7 +236,7 @@ export const cronNodeOptions: INodePropertyCollection[] = [
 	},
 ];
 
-const specialNodeParameters: INodeProperties[] = [
+const commonPollingParameters: INodeProperties[] = [
 	{
 		displayName: 'Poll Times',
 		name: 'pollTimes',
@@ -251,12 +252,28 @@ const specialNodeParameters: INodeProperties[] = [
 	},
 ];
 
+const commonCORSParameters: INodeProperties[] = [
+	{
+		displayName: 'Allowed Origins (CORS)',
+		name: 'allowedOrigins',
+		type: 'string',
+		default: '*',
+		description: 'The origin(s) to allow cross-origin non-preflight requests from in a browser',
+	},
+];
+
 /**
  * Apply special parameters which should be added to nodeTypes depending on their type or configuration
  */
 export function applySpecialNodeParameters(nodeType: INodeType): void {
-	if (nodeType.description.polling === true) {
-		nodeType.description.properties.unshift(...specialNodeParameters);
+	const { properties, polling, supportsCORS } = nodeType.description;
+	if (polling) {
+		properties.unshift(...commonPollingParameters);
+	}
+	if (nodeType.webhook && supportsCORS) {
+		const optionsProperty = properties.find(({ name }) => name === 'options');
+		if (optionsProperty) optionsProperty.options!.push(...commonCORSParameters);
+		else properties.push(...commonCORSParameters);
 	}
 }
 
@@ -537,7 +554,7 @@ export function getParameterResolveOrder(
  */
 export function getNodeParameters(
 	nodePropertiesArray: INodeProperties[],
-	nodeValues: INodeParameters,
+	nodeValues: INodeParameters | null,
 	returnDefaults: boolean,
 	returnNoneDisplayed: boolean,
 	node: INode | null,
@@ -587,16 +604,17 @@ export function getNodeParameters(
 	nodeValuesRoot = nodeValuesRoot || nodeValuesDisplayCheck;
 
 	// Go through the parameters in order of their dependencies
-	const parameterItterationOrderIndex = getParameterResolveOrder(
+	const parameterIterationOrderIndex = getParameterResolveOrder(
 		nodePropertiesArray,
 		parameterDependencies,
 	);
 
-	for (const parameterIndex of parameterItterationOrderIndex) {
+	for (const parameterIndex of parameterIterationOrderIndex) {
 		const nodeProperties = nodePropertiesArray[parameterIndex];
 		if (
-			nodeValues[nodeProperties.name] === undefined &&
-			(!returnDefaults || parentType === 'collection')
+			!nodeValues ||
+			(nodeValues[nodeProperties.name] === undefined &&
+				(!returnDefaults || parentType === 'collection'))
 		) {
 			// The value is not defined so go to the next
 			continue;
@@ -885,7 +903,6 @@ export function getNodeWebhooks(
 			node,
 			webhookDescription.path,
 			mode,
-			additionalData.timezone,
 			{},
 		);
 		if (nodeWebhookPath === undefined) {
@@ -909,7 +926,6 @@ export function getNodeWebhooks(
 			node,
 			webhookDescription.isFullPath,
 			'internal',
-			additionalData.timezone,
 			{},
 			undefined,
 			false,
@@ -918,7 +934,6 @@ export function getNodeWebhooks(
 			node,
 			webhookDescription.restartWebhook,
 			'internal',
-			additionalData.timezone,
 			{},
 			undefined,
 			false,
@@ -929,7 +944,6 @@ export function getNodeWebhooks(
 			node,
 			webhookDescription.httpMethod,
 			mode,
-			additionalData.timezone,
 			{},
 			undefined,
 			'GET',
@@ -1027,7 +1041,7 @@ export function getNodeInputs(
 	node: INode,
 	nodeTypeData: INodeTypeDescription,
 ): Array<ConnectionTypes | INodeInputConfiguration> {
-	if (Array.isArray(nodeTypeData.inputs)) {
+	if (Array.isArray(nodeTypeData?.inputs)) {
 		return nodeTypeData.inputs;
 	}
 
@@ -1037,7 +1051,6 @@ export function getNodeInputs(
 			node,
 			nodeTypeData.inputs,
 			'internal',
-			'',
 			{},
 		) || []) as ConnectionTypes[];
 	} catch (e) {
@@ -1050,22 +1063,48 @@ export function getNodeOutputs(
 	node: INode,
 	nodeTypeData: INodeTypeDescription,
 ): Array<ConnectionTypes | INodeOutputConfiguration> {
+	let outputs: Array<ConnectionTypes | INodeOutputConfiguration> = [];
+
 	if (Array.isArray(nodeTypeData.outputs)) {
-		return nodeTypeData.outputs;
+		outputs = nodeTypeData.outputs;
+	} else {
+		// Calculate the outputs dynamically
+		try {
+			outputs = (workflow.expression.getSimpleParameterValue(
+				node,
+				nodeTypeData.outputs,
+				'internal',
+				{},
+			) || []) as ConnectionTypes[];
+		} catch (e) {
+			throw new Error(`Could not calculate outputs dynamically for node "${node.name}"`);
+		}
 	}
 
-	// Calculate the outputs dynamically
-	try {
-		return (workflow.expression.getSimpleParameterValue(
-			node,
-			nodeTypeData.outputs,
-			'internal',
-			'',
-			{},
-		) || []) as ConnectionTypes[];
-	} catch (e) {
-		throw new Error(`Could not calculate outputs dynamically for node "${node.name}"`);
+	if (node.onError === 'continueErrorOutput') {
+		// Copy the data to make sure that we do not change the data of the
+		// node type and so change the displayNames for all nodes in the flow
+		outputs = deepCopy(outputs);
+		if (outputs.length === 1) {
+			// Set the displayName to "Success"
+			if (typeof outputs[0] === 'string') {
+				outputs[0] = {
+					type: outputs[0],
+				};
+			}
+			outputs[0].displayName = 'Success';
+		}
+		return [
+			...outputs,
+			{
+				category: 'error',
+				type: 'main',
+				displayName: 'Error',
+			},
+		];
 	}
+
+	return outputs;
 }
 
 /**
@@ -1712,10 +1751,33 @@ export function getVersionedNodeType(
 
 export function getVersionedNodeTypeAll(object: IVersionedNodeType | INodeType): INodeType[] {
 	if ('nodeVersions' in object) {
-		return Object.values(object.nodeVersions).map((element) => {
-			element.description.name = object.description.name;
-			return element;
-		});
+		return uniqBy(
+			Object.values(object.nodeVersions)
+				.map((element) => {
+					element.description.name = object.description.name;
+					return element;
+				})
+				.reverse(),
+			(node) => {
+				const { version } = node.description;
+				return Array.isArray(version) ? version.join(',') : version.toString();
+			},
+		);
 	}
 	return [object];
+}
+
+export function getCredentialsForNode(
+	object: IVersionedNodeType | INodeType,
+): INodeCredentialDescription[] {
+	if ('nodeVersions' in object) {
+		return uniqBy(
+			Object.values(object.nodeVersions).flatMap(
+				(version) => version.description.credentials ?? [],
+			),
+			'name',
+		);
+	}
+
+	return object.description.credentials ?? [];
 }

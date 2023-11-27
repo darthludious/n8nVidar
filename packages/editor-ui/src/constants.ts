@@ -1,9 +1,12 @@
 import type { NodeCreatorOpenSource } from './Interface';
 import { NodeConnectionType } from 'n8n-workflow';
 
-export const MAX_WORKFLOW_SIZE = 16777216; // Workflow size limit in bytes
-export const MAX_WORKFLOW_PINNED_DATA_SIZE = 12582912; // Workflow pinned data size limit in bytes
-export const MAX_DISPLAY_DATA_SIZE = 204800;
+export const MAX_WORKFLOW_SIZE = 1024 * 1024 * 16; // Workflow size limit in bytes
+export const MAX_EXPECTED_REQUEST_SIZE = 2048; // Expected maximum workflow request metadata (i.e. headers) size in bytes
+export const MAX_PINNED_DATA_SIZE = import.meta.env.VUE_APP_MAX_PINNED_DATA_SIZE
+	? parseInt(import.meta.env.VUE_APP_MAX_PINNED_DATA_SIZE, 10)
+	: 1024 * 1024 * 12; // Workflow pinned data size limit in bytes
+export const MAX_DISPLAY_DATA_SIZE = 1024 * 200;
 export const MAX_DISPLAY_ITEMS_AUTO_ALL = 250;
 
 export const PLACEHOLDER_FILLED_AT_EXECUTION_TIME = '[filled at execution time]';
@@ -152,6 +155,10 @@ export const WOOCOMMERCE_TRIGGER_NODE_TYPE = 'n8n-nodes-base.wooCommerceTrigger'
 export const XERO_NODE_TYPE = 'n8n-nodes-base.xero';
 export const ZENDESK_NODE_TYPE = 'n8n-nodes-base.zendesk';
 export const ZENDESK_TRIGGER_NODE_TYPE = 'n8n-nodes-base.zendeskTrigger';
+export const DISCORD_NODE_TYPE = 'n8n-nodes-base.discord';
+
+export const CREDENTIAL_ONLY_NODE_PREFIX = 'n8n-creds-base';
+export const CREDENTIAL_ONLY_HTTP_NODE_VERSION = 4.1;
 
 export const EXECUTABLE_TRIGGER_NODE_TYPES = [
 	START_NODE_TYPE,
@@ -168,9 +175,9 @@ export const NON_ACTIVATABLE_TRIGGER_NODE_TYPES = [
 	MANUAL_CHAT_TRIGGER_NODE_TYPE,
 ];
 
-export const NODES_USING_CODE_NODE_EDITOR = [CODE_NODE_TYPE];
+export const NODES_USING_CODE_NODE_EDITOR = [CODE_NODE_TYPE, AI_CODE_NODE_TYPE];
 
-export const PIN_DATA_NODE_TYPES_DENYLIST = [SPLIT_IN_BATCHES_NODE_TYPE];
+export const PIN_DATA_NODE_TYPES_DENYLIST = [SPLIT_IN_BATCHES_NODE_TYPE, STICKY_NODE_TYPE];
 
 export const OPEN_URL_PANEL_TRIGGER_NODE_TYPES = [WEBHOOK_NODE_TYPE, FORM_TRIGGER_NODE_TYPE];
 
@@ -187,6 +194,7 @@ export const NODE_CREATOR_OPEN_SOURCES: Record<
 	TAB: 'tab',
 	NODE_CONNECTION_ACTION: 'node_connection_action',
 	NODE_CONNECTION_DROP: 'node_connection_drop',
+	CONTEXT_MENU: 'context_menu',
 	'': '',
 };
 export const CORE_NODES_CATEGORY = 'Core Nodes';
@@ -219,9 +227,8 @@ export const REQUEST_NODE_FORM_URL = 'https://n8n-community.typeform.com/to/K1fB
 
 // Node Connection Types
 export const NODE_CONNECTION_TYPE_ALLOW_MULTIPLE: NodeConnectionType[] = [
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 	NodeConnectionType.AiTool,
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
 	NodeConnectionType.Main,
 ];
 
@@ -426,6 +433,7 @@ export const enum VIEWS {
 	AUDIT_LOGS = 'AuditLogs',
 	MFA_VIEW = 'MfaView',
 	WORKFLOW_HISTORY = 'WorkflowHistory',
+	WORKER_VIEW = 'WorkerView',
 }
 
 export const enum FAKE_DOOR_FEATURES {
@@ -453,6 +461,7 @@ export const MAPPING_PARAMS = [
 	'$env',
 	'$evaluateExpression',
 	'$execution',
+	'$ifEmpty',
 	'$input',
 	'$item',
 	'$jmespath',
@@ -498,6 +507,7 @@ export const enum EnterpriseEditionFeature {
 	AuditLogs = 'auditLogs',
 	DebugInEditor = 'debugInEditor',
 	WorkflowHistory = 'workflowHistory',
+	WorkerView = 'workerView',
 }
 export const MAIN_NODE_PANEL_WIDTH = 360;
 
@@ -557,6 +567,9 @@ export const enum STORES {
 	WEBHOOKS = 'webhooks',
 	HISTORY = 'history',
 	CLOUD_PLAN = 'cloudPlan',
+	RBAC = 'rbac',
+	COLLABORATION = 'collaboration',
+	PUSH = 'push',
 }
 
 export const enum SignInType {
@@ -574,6 +587,7 @@ export const KEEP_AUTH_IN_NDV_FOR_NODES = [
 	HTTP_REQUEST_NODE_TYPE,
 	WEBHOOK_NODE_TYPE,
 	WAIT_NODE_TYPE,
+	DISCORD_NODE_TYPE,
 ];
 export const MAIN_AUTH_FIELD_NAME = 'authentication';
 export const NODE_RESOURCE_FIELD_NAME = 'resource';
@@ -595,7 +609,7 @@ export const MFA_AUTHENTICATION_TOKEN_INPUT_MAX_LENGTH = 6;
 
 export const MFA_AUTHENTICATION_RECOVERY_CODE_INPUT_MAX_LENGTH = 36;
 
-export const NODE_TYPES_EXCLUDED_FROM_OUTPUT_NAME_APPEND = [FILTER_NODE_TYPE];
+export const NODE_TYPES_EXCLUDED_FROM_OUTPUT_NAME_APPEND = [FILTER_NODE_TYPE, SWITCH_NODE_TYPE];
 
 export const ALLOWED_HTML_ATTRIBUTES = ['href', 'name', 'target', 'title', 'class', 'id', 'style'];
 
@@ -611,6 +625,7 @@ export const ALLOWED_HTML_TAGS = [
 	'small',
 	'details',
 	'summary',
+	'mark',
 ];
 
 export const CLOUD_CHANGE_PLAN_PAGE = window.location.host.includes('stage-app.n8n.cloud')
@@ -637,3 +652,15 @@ export const DRAG_EVENT_DATA_KEY = 'nodesAndConnections';
 
 export const NOT_DUPLICATABE_NODE_TYPES = [FORM_TRIGGER_NODE_TYPE];
 export const UPDATE_WEBHOOK_ID_NODE_TYPES = [FORM_TRIGGER_NODE_TYPE];
+
+export const CREATOR_HUB_URL = 'https://creators.n8n.io/hub';
+
+/**
+ * Units of time in milliseconds
+ */
+export const TIME = {
+	SECOND: 1000,
+	MINUTE: 60 * 1000,
+	HOUR: 60 * 60 * 1000,
+	DAY: 24 * 60 * 60 * 1000,
+};

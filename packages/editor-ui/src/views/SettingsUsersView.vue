@@ -2,7 +2,7 @@
 	<div :class="$style.container">
 		<div>
 			<n8n-heading size="2xlarge">{{ $locale.baseText('settings.users') }}</n8n-heading>
-			<div :class="$style.buttonContainer" v-if="!usersStore.showUMSetupWarning">
+			<div :class="$style.buttonContainer" v-if="!showUMSetupWarning">
 				<n8n-tooltip :disabled="!ssoStore.isSamlLoginEnabled">
 					<template #content>
 						<span> {{ $locale.baseText('settings.users.invite.tooltip') }} </span>
@@ -62,7 +62,7 @@ import { defineComponent } from 'vue';
 import { mapStores } from 'pinia';
 import { EnterpriseEditionFeature, INVITE_USER_MODAL_KEY, VIEWS } from '@/constants';
 
-import type { IUser, IUserListAction } from '@/Interface';
+import type { IUserListAction } from '@/Interface';
 import { useToast } from '@/composables';
 import { copyPaste } from '@/mixins/copyPaste';
 import { useUIStore } from '@/stores/ui.store';
@@ -70,6 +70,8 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { useUsersStore } from '@/stores/users.store';
 import { useUsageStore } from '@/stores/usage.store';
 import { useSSOStore } from '@/stores/sso.store';
+import { hasPermission } from '@/rbac/permissions';
+import { ROLE } from '@/utils';
 
 export default defineComponent({
 	name: 'SettingsUsersView',
@@ -80,7 +82,7 @@ export default defineComponent({
 		};
 	},
 	async mounted() {
-		if (!this.usersStore.showUMSetupWarning) {
+		if (!this.showUMSetupWarning) {
 			await this.usersStore.fetchUsers();
 		}
 	},
@@ -88,6 +90,9 @@ export default defineComponent({
 		...mapStores(useSettingsStore, useUIStore, useUsersStore, useUsageStore, useSSOStore),
 		isSharingEnabled() {
 			return this.settingsStore.isEnterpriseFeatureEnabled(EnterpriseEditionFeature.Sharing);
+		},
+		showUMSetupWarning() {
+			return hasPermission(['role'], { role: [ROLE.Default] });
 		},
 		usersListActions(): IUserListAction[] {
 			return [
@@ -137,22 +142,21 @@ export default defineComponent({
 			this.uiStore.openModal(INVITE_USER_MODAL_KEY);
 		},
 		async onDelete(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
+			const user = this.usersStore.getUserById(userId);
 			if (user) {
 				this.uiStore.openDeleteUserModal(userId);
 			}
 		},
 		async onReinvite(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
-			if (user) {
+			const user = this.usersStore.getUserById(userId);
+			if (user?.email) {
 				try {
-					await this.usersStore.reinviteUser({ id: user.id });
-
+					await this.usersStore.reinviteUser({ email: user.email });
 					this.showToast({
 						type: 'success',
 						title: this.$locale.baseText('settings.users.inviteResent'),
 						message: this.$locale.baseText('settings.users.emailSentTo', {
-							interpolate: { email: user.email || '' },
+							interpolate: { email: user.email ?? '' },
 						}),
 					});
 				} catch (e) {
@@ -161,7 +165,7 @@ export default defineComponent({
 			}
 		},
 		async onCopyInviteLink(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
+			const user = this.usersStore.getUserById(userId);
 			if (user?.inviteAcceptUrl) {
 				this.copyToClipboard(user.inviteAcceptUrl);
 
@@ -173,7 +177,7 @@ export default defineComponent({
 			}
 		},
 		async onCopyPasswordResetLink(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
+			const user = this.usersStore.getUserById(userId);
 			if (user) {
 				const url = await this.usersStore.getUserPasswordResetLink(user);
 				this.copyToClipboard(url.link);
@@ -186,7 +190,7 @@ export default defineComponent({
 			}
 		},
 		async onAllowSSOManualLogin(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
+			const user = this.usersStore.getUserById(userId);
 			if (user) {
 				if (!user.settings) {
 					user.settings = {};
@@ -202,7 +206,7 @@ export default defineComponent({
 			}
 		},
 		async onDisallowSSOManualLogin(userId: string) {
-			const user = this.usersStore.getUserById(userId) as IUser | null;
+			const user = this.usersStore.getUserById(userId);
 			if (user?.settings) {
 				user.settings.allowSSOManualLogin = false;
 				await this.usersStore.updateOtherUserSettings(userId, user.settings);

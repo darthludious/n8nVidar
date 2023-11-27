@@ -18,7 +18,7 @@
 		<n8n-menu :items="mainMenuItems" :collapsed="isCollapsed" @select="handleSelect">
 			<template #header>
 				<div :class="$style.logo">
-					<img :src="logoPath" :class="$style.icon" alt="n8n" />
+					<img :src="logoPath" data-test-id="n8n-logo" :class="$style.icon" alt="n8n" />
 				</div>
 			</template>
 
@@ -122,6 +122,8 @@ import {
 import { isNavigationFailure } from 'vue-router';
 import ExecutionsUsage from '@/components/ExecutionsUsage.vue';
 import MainSidebarSourceControl from '@/components/MainSidebarSourceControl.vue';
+import { ROLE } from '@/utils';
+import { hasPermission } from '@/rbac/permissions';
 
 export default defineComponent({
 	name: 'MainSidebar',
@@ -177,7 +179,9 @@ export default defineComponent({
 			return accessibleRoute !== null;
 		},
 		showUserArea(): boolean {
-			return this.usersStore.canUserAccessSidebarUserInfo && this.usersStore.currentUser !== null;
+			return hasPermission(['role'], {
+				role: [ROLE.Member, ROLE.Owner],
+			});
 		},
 		workflowExecution(): IExecutionResponse | null {
 			return this.workflowsStore.getWorkflowExecution;
@@ -219,10 +223,8 @@ export default defineComponent({
 				for (const item of injectedItems) {
 					items.push({
 						id: item.id,
-						// @ts-ignore
-						icon: item.properties ? item.properties.icon : '',
-						// @ts-ignore
-						label: item.properties ? item.properties.title : '',
+						icon: item.icon || '',
+						label: item.label || '',
 						position: item.position,
 						type: item.properties?.href ? 'link' : 'regular',
 						properties: item.properties,
@@ -264,6 +266,14 @@ export default defineComponent({
 					activateOnRouteNames: [VIEWS.EXECUTIONS],
 				},
 				{
+					id: 'cloud-admin',
+					type: 'link',
+					position: 'bottom',
+					label: 'Admin Panel',
+					icon: 'home',
+					available: this.settingsStore.isCloudDeployment && this.usersStore.isInstanceOwner,
+				},
+				{
 					id: 'settings',
 					icon: 'cog',
 					label: this.$locale.baseText('settings'),
@@ -293,7 +303,7 @@ export default defineComponent({
 							label: this.$locale.baseText('mainSidebar.helpMenuItems.documentation'),
 							type: 'link',
 							properties: {
-								href: 'https://docs.n8n.io',
+								href: 'https://docs.n8n.io?utm_source=n8n_app&utm_medium=app_sidebar',
 								newWindow: true,
 							},
 						},
@@ -303,7 +313,7 @@ export default defineComponent({
 							label: this.$locale.baseText('mainSidebar.helpMenuItems.forum'),
 							type: 'link',
 							properties: {
-								href: 'https://community.n8n.io',
+								href: 'https://community.n8n.io?utm_source=n8n_app&utm_medium=app_sidebar',
 								newWindow: true,
 							},
 						},
@@ -341,10 +351,12 @@ export default defineComponent({
 			};
 		},
 	},
-	mounted() {
+	async mounted() {
 		this.basePath = this.rootStore.baseUrl;
 		if (this.$refs.user) {
-			void this.$externalHooks().run('mainSidebar.mounted', { userRef: this.$refs.user });
+			void this.$externalHooks().run('mainSidebar.mounted', {
+				userRef: this.$refs.user as Element,
+			});
 		}
 
 		void this.$nextTick(() => {
@@ -444,6 +456,10 @@ export default defineComponent({
 				case 'about': {
 					this.trackHelpItemClick('about');
 					this.uiStore.openModal(ABOUT_MODAL_KEY);
+					break;
+				}
+				case 'cloud-admin': {
+					this.cloudPlanStore.redirectToDashboard();
 					break;
 				}
 				case 'quickstart':

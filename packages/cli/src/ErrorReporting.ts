@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import config from '@/config';
-import { ErrorReporterProxy, ExecutionBaseError } from 'n8n-workflow';
+import { ErrorReporterProxy, ExecutionBaseError, ReportableError } from 'n8n-workflow';
 
 let initialized = false;
 
@@ -23,7 +23,7 @@ export const initErrorHandling = async () => {
 	const { N8N_VERSION: release, ENVIRONMENT: environment } = process.env;
 
 	const { init, captureException, addGlobalEventProcessor } = await import('@sentry/node');
-	// eslint-disable-next-line @typescript-eslint/naming-convention
+
 	const { RewriteFrames } = await import('@sentry/integrations');
 
 	init({
@@ -41,10 +41,19 @@ export const initErrorHandling = async () => {
 	addGlobalEventProcessor((event, { originalException }) => {
 		if (originalException instanceof ExecutionBaseError && originalException.severity === 'warning')
 			return null;
+
+		if (originalException instanceof ReportableError) {
+			const { level, extra } = originalException;
+			if (level === 'warning') return null;
+			event.level = level;
+			if (extra) event.extra = { ...event.extra, ...extra };
+		}
+
 		if (!event.exception) return null;
 		const eventHash = createHash('sha1').update(JSON.stringify(event.exception)).digest('base64');
 		if (seenErrors.has(eventHash)) return null;
 		seenErrors.add(eventHash);
+
 		return event;
 	});
 

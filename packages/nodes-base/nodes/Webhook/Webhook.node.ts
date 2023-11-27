@@ -1,4 +1,6 @@
 /* eslint-disable n8n-nodes-base/node-execute-block-wrong-error-thrown */
+import { pipeline } from 'stream/promises';
+import { createWriteStream } from 'fs';
 import type {
 	IWebhookFunctions,
 	ICredentialDataDecryptedObject,
@@ -10,8 +12,6 @@ import type {
 } from 'n8n-workflow';
 import { BINARY_ENCODING, NodeOperationError, Node } from 'n8n-workflow';
 
-import { pipeline } from 'stream/promises';
-import { createWriteStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import basicAuth from 'basic-auth';
 import isbot from 'isbot';
@@ -45,6 +45,7 @@ export class Webhook extends Node {
 		defaults: {
 			name: 'Webhook',
 		},
+		supportsCORS: true,
 		triggerPanel: {
 			header: '',
 			executionsHelp: {
