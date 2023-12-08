@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import config from '@/config';
-import { ErrorReporterProxy, ExecutionBaseError, ReportableError } from 'n8n-workflow';
+import { ErrorReporterProxy, ApplicationError } from 'n8n-workflow';
 
 let initialized = false;
 
@@ -39,10 +39,7 @@ export const initErrorHandling = async () => {
 
 	const seenErrors = new Set<string>();
 	addGlobalEventProcessor((event, { originalException }) => {
-		if (originalException instanceof ExecutionBaseError && originalException.severity === 'warning')
-			return null;
-
-		if (originalException instanceof ReportableError) {
+		if (originalException instanceof ApplicationError) {
 			const { level, extra } = originalException;
 			if (level === 'warning') return null;
 			event.level = level;

@@ -605,19 +605,21 @@ import {
 import BinaryDataDisplay from '@/components/BinaryDataDisplay.vue';
 import NodeErrorView from '@/components/Error/NodeErrorView.vue';
 
-import { externalHooks } from '@/mixins/externalHooks';
 import { genericHelpers } from '@/mixins/genericHelpers';
 import { nodeHelpers } from '@/mixins/nodeHelpers';
 import { pinData } from '@/mixins/pinData';
 import type { PinDataSource } from '@/mixins/pinData';
 import CodeNodeEditor from '@/components/CodeNodeEditor/CodeNodeEditor.vue';
 import { dataPinningEventBus } from '@/event-bus';
-import { clearJsonKey, executionDataToJson, isEmpty, searchInObject } from '@/utils';
+import { clearJsonKey, isEmpty } from '@/utils/typesUtils';
+import { executionDataToJson } from '@/utils/nodeTypesUtils';
+import { searchInObject } from '@/utils/objectUtils';
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNDVStore } from '@/stores/ndv.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
-import { useToast } from '@/composables';
+import { useToast } from '@/composables/useToast';
 import { isObject } from 'lodash-es';
+import { useExternalHooks } from '@/composables/useExternalHooks';
 
 const RunDataTable = defineAsyncComponent(async () => import('@/components/RunDataTable.vue'));
 const RunDataJson = defineAsyncComponent(async () => import('@/components/RunDataJson.vue'));
@@ -631,7 +633,7 @@ export type EnterEditModeArgs = {
 
 export default defineComponent({
 	name: 'RunData',
-	mixins: [externalHooks, genericHelpers, nodeHelpers, pinData],
+	mixins: [genericHelpers, nodeHelpers, pinData],
 	components: {
 		BinaryDataDisplay,
 		NodeErrorView,
@@ -697,7 +699,10 @@ export default defineComponent({
 		},
 	},
 	setup() {
+		const externalHooks = useExternalHooks();
+
 		return {
+			externalHooks,
 			...useToast(),
 		};
 	},
@@ -1132,7 +1137,7 @@ export default defineComponent({
 					view: !this.hasNodeRun && !this.hasPinData ? 'none' : this.displayMode,
 				};
 
-				void this.$externalHooks().run('runData.onTogglePinData', telemetryPayload);
+				void this.externalHooks.run('runData.onTogglePinData', telemetryPayload);
 				this.$telemetry.track('User clicked pin data icon', telemetryPayload);
 			}
 
@@ -1242,7 +1247,7 @@ export default defineComponent({
 			}
 
 			this.closeBinaryDataDisplay();
-			void this.$externalHooks().run('runData.displayModeChanged', {
+			void this.externalHooks.run('runData.displayModeChanged', {
 				newValue: displayMode,
 				oldValue: previous,
 			});
@@ -1323,7 +1328,7 @@ export default defineComponent({
 				return 0;
 			}
 
-			if (this.workflowRunData?.[this.node.name][runIndex].hasOwnProperty('error')) {
+			if (this.workflowRunData?.[this.node.name]?.[runIndex]?.hasOwnProperty('error')) {
 				return 1;
 			}
 

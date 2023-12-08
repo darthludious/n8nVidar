@@ -136,7 +136,8 @@ import { NodeHelpers } from 'n8n-workflow';
 import CredentialIcon from '@/components/CredentialIcon.vue';
 
 import { nodeHelpers } from '@/mixins/nodeHelpers';
-import { useToast, useMessage } from '@/composables';
+import { useMessage } from '@/composables/useMessage';
+import { useToast } from '@/composables/useToast';
 
 import CredentialConfig from '@/components/CredentialEdit/CredentialConfig.vue';
 import CredentialInfo from '@/components/CredentialEdit/CredentialInfo.vue';
@@ -157,15 +158,13 @@ import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNDVStore } from '@/stores/ndv.store';
 import { useCredentialsStore } from '@/stores/credentials.store';
 import {
-	isValidCredentialResponse,
 	getNodeAuthOptions,
 	getNodeCredentialForSelectedAuthType,
 	updateNodeAuthType,
-	isCredentialModalState,
-	isExpression,
-	isTestableExpression,
-} from '@/utils';
-import { externalHooks } from '@/mixins/externalHooks';
+} from '@/utils/nodeTypesUtils';
+import { isValidCredentialResponse, isCredentialModalState } from '@/utils/typeGuards';
+import { isExpression, isTestableExpression } from '@/utils/expressions';
+import { useExternalHooks } from '@/composables/useExternalHooks';
 
 interface NodeAccessMap {
 	[nodeType: string]: ICredentialNodeAccess | null;
@@ -173,7 +172,7 @@ interface NodeAccessMap {
 
 export default defineComponent({
 	name: 'CredentialEdit',
-	mixins: [nodeHelpers, externalHooks],
+	mixins: [nodeHelpers],
 	components: {
 		CredentialSharing,
 		CredentialConfig,
@@ -199,6 +198,7 @@ export default defineComponent({
 	},
 	setup() {
 		return {
+			externalHooks: useExternalHooks(),
 			...useToast(),
 			...useMessage(),
 		};
@@ -267,7 +267,7 @@ export default defineComponent({
 			}
 		}
 
-		await this.$externalHooks().run('credentialsEdit.credentialModalOpened', {
+		await this.externalHooks.run('credentialsEdit.credentialModalOpened', {
 			credentialType: this.credentialTypeName,
 			isEditingCredential: this.mode === 'edit',
 			activeNode: this.ndvStore.activeNode,
@@ -877,7 +877,7 @@ export default defineComponent({
 				}
 
 				this.$telemetry.track('User saved credentials', trackProperties);
-				await this.$externalHooks().run('credentialEdit.saveCredential', trackProperties);
+				await this.externalHooks.run('credentialEdit.saveCredential', trackProperties);
 			}
 
 			return credential;
@@ -900,7 +900,7 @@ export default defineComponent({
 				return null;
 			}
 
-			await this.$externalHooks().run('credential.saved', {
+			await this.externalHooks.run('credential.saved', {
 				credential_type: credentialDetails.type,
 				credential_id: credential.id,
 				is_new: true,
@@ -934,7 +934,7 @@ export default defineComponent({
 				return null;
 			}
 
-			await this.$externalHooks().run('credential.saved', {
+			await this.externalHooks.run('credential.saved', {
 				credential_type: credentialDetails.type,
 				credential_id: credential.id,
 				is_new: false,
